@@ -1,4 +1,3 @@
-import RevenueCatUI
 import StoreKit
 import SwiftUI
 
@@ -33,7 +32,6 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 }
 
 struct SettingsView: View {
-    @EnvironmentObject private var revenueCat: RevenueCatManager
     @Environment(\.requestReview) private var requestReview
     @Binding var appearanceSelection: AppAppearance
     let onDeleteData: () -> Void
@@ -44,34 +42,6 @@ struct SettingsView: View {
         NavigationStack {
             VStack {
                 Form {
-                    Section("Premium") {
-                        HStack {
-                            Label("Status", systemImage: revenueCat.isPremium ? "checkmark.seal.fill" : "lock.fill")
-                                .foregroundStyle(revenueCat.isPremium ? .green : .primary)
-                            Spacer()
-                            Text(revenueCat.isPremium ? "Unlocked" : "Free")
-                                .foregroundStyle(revenueCat.isPremium ? .green : .secondary)
-                        }
-
-                        Button {
-                            Task {
-                                await revenueCat.restorePurchases()
-                            }
-                        } label: {
-                            Label("Restore Purchases", systemImage: "arrow.clockwise")
-                        }
-                        .foregroundStyle(.primary)
-
-                        if !revenueCat.isPremium {
-                            Button {
-                                revenueCat.presentPaywall()
-                            } label: {
-                                Label("Unlock Premium", systemImage: "crown.fill")
-                            }
-                            .foregroundStyle(.primary)
-                        }
-                    }
-
                     Section("Appearance") {
                         Picker("Theme", selection: $appearanceSelection) {
                             ForEach(AppAppearance.allCases) { appearance in
@@ -159,16 +129,7 @@ struct SettingsView: View {
             } message: {
                 Text(cacheAlertMessage ?? "")
             }
-            .sheet(isPresented: $revenueCat.isShowingPaywall, onDismiss: {
-                Task {
-                    await revenueCat.refreshCustomerInfo()
-                }
-            }) {
-                PaywallView()
-            }
-            .task {
-                await revenueCat.refreshCustomerInfoIfNeeded()
-            }
+
         }
     }
 

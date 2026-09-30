@@ -6,7 +6,6 @@
 //
 
 import CryptoKit
-import RevenueCatUI
 import StoreKit
 import SwiftUI
 import UIKit
@@ -171,17 +170,23 @@ struct ContentView: View {
             }
 
             Section {
-                Button("Continue") {
-                    viewModel.persistCredentialsAndContinue()
-                }
-                .frame(maxWidth: .infinity)
-                .disabled(!viewModel.canContinue)
-                .accessibilityIdentifier("continueButton")
+                VStack(spacing: 0) {
+                    Button("Continue") {
+                        viewModel.persistCredentialsAndContinue()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(!viewModel.canContinue)
+                    .accessibilityIdentifier("continueButton")
 
-                Button("Try Demo Mode") {
-                    viewModel.enterDemoMode()
+                    Divider()
+                        .padding(.vertical, 10)
+
+                    Button("Try Demo Mode") {
+                        viewModel.enterDemoMode()
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .listRowSeparator(.hidden)
             } footer: {
                 Label("Your private key remains on this device and is not transmitted by this setup screen.", systemImage: "lock.shield")
             }
@@ -587,7 +592,6 @@ private struct MonetizationStateAppearance {
 }
 
 private struct SubscriptionPriceParityView: View {
-    @EnvironmentObject private var revenueCat: RevenueCatManager
     let appName: String
     let appIconURL: URL?
     let subscription: AppMonetizationProduct
@@ -597,6 +601,7 @@ private struct SubscriptionPriceParityView: View {
     let bigMacEntries: [BigMacIndexEntry]
     let isDemoMode: Bool
 
+    @State private var priceReloadGeneration = 0
     @State private var phase: SubscriptionPriceParityPhase = .loading
     @State private var pricePoints: [SubscriptionPriceParityPoint] = []
     @State private var overrideRegionID: String?
@@ -666,7 +671,7 @@ private struct SubscriptionPriceParityView: View {
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
-                            VStack(spacing: 12) {
+                            LazyVStack(spacing: 12) {
                                 ForEach(comparisonPricePoints) { point in
                                     pricePointCard(point)
                                 }
@@ -749,13 +754,6 @@ private struct SubscriptionPriceParityView: View {
                 )
                 .presentationDetents([.height(420), .medium])
         }
-        .sheet(isPresented: $revenueCat.isShowingPaywall, onDismiss: {
-            Task {
-                await revenueCat.refreshCustomerInfo()
-            }
-        }) {
-            PaywallView()
-        }
         .navigationDestination(isPresented: $isShowingSaveReview) {
             SubscriptionPriceSaveReviewView(
                 subscriptionName: subscription.referenceName,
@@ -778,8 +776,21 @@ private struct SubscriptionPriceParityView: View {
                 }
             )
         }
-        .task(id: subscription.id) {
+        .task(id: "\(subscription.id):\(priceReloadGeneration)") {
             await loadPriceParity()
+        }
+        .refreshable {
+            guard !isPreparingSavePreparation else { return }
+            do {
+                try AppStoreConnectClient.clearPriceCache(
+                    product: subscription, issuerID: issuerID, keyID: keyID
+                )
+                cachedSavePreparation = nil
+                availableBasePriceTiersByRegion = [:]
+                await loadPriceParity()
+            } catch {
+                savePreparationErrorMessage = error.localizedDescription
+            }
         }
         .task(id: selectedReferenceCurrencyCode) {
             await loadLiveExchangeRatesIfNeeded(for: selectedReferenceCurrencyCode)
@@ -1109,13 +1120,9 @@ private struct SubscriptionPriceParityView: View {
             VStack(alignment: .trailing, spacing: 8) {
                 Button {
                     if isReady {
-                        if revenueCat.isPremium {
-                            manualOverrideSelection = .init(regionID: point.territoryID)
-                            Task {
-                                await loadAvailableBasePriceTiersIfNeeded(for: point.territoryID)
-                            }
-                        } else {
-                            revenueCat.presentPaywall()
+                        manualOverrideSelection = .init(regionID: point.territoryID)
+                        Task {
+                            await loadAvailableBasePriceTiersIfNeeded(for: point.territoryID)
                         }
                     }
                 } label: {
@@ -1548,6 +1555,11 @@ private struct SubscriptionPriceParityView: View {
             throw ClientError.invalidResponse(-1, body: "There are no calculated country prices ready to save yet.")
         }
 
+        // Reconcile after success or partial failure, without holding the save screen open.
+        defer {
+            phase = .loading
+            priceReloadGeneration += 1
+        }
         let result: SubscriptionPriceSaveResult
         switch subscription.kind {
         case .subscription:
@@ -1575,7 +1587,6 @@ private struct SubscriptionPriceParityView: View {
                 progress: progress
             )
         }
-        await loadPriceParity()
         saveAlertMessage = "Saved \(result.savedCount) territory prices to App Store Connect."
         if result.skippedCount > 0 {
             saveAlertMessage = (saveAlertMessage ?? "") + " Skipped \(result.skippedCount) territories that were already at the selected price."
@@ -1682,6 +1693,16 @@ private struct SubscriptionPriceParityView: View {
                     privateKeyData: privateKeyData
                 )
             }
+            try Task.checkCancellation()
+            if let preparation = cachedSavePreparation,
+               parityLoadResult.points.allSatisfy({ preparation.pricePointsByTerritory[$0.territoryID] != nil }) {
+                cachedSavePreparation = SubscriptionPriceSavePreparation(
+                    pricePointsByTerritory: preparation.pricePointsByTerritory,
+                    futureScheduledPriceIDsByTerritory: parityLoadResult.futureScheduledPriceIDsByTerritory
+                )
+            } else {
+                cachedSavePreparation = nil
+            }
             pricePoints = parityLoadResult.points
             cachedFutureScheduledPriceIDsByTerritory = parityLoadResult.futureScheduledPriceIDsByTerritory
             let basePoint = preferredBasePricePoint(from: pricePoints)
@@ -1692,10 +1713,9 @@ private struct SubscriptionPriceParityView: View {
                 overridePriceTier = basePoint?.customerPrice
             }
             phase = .loaded
-            Task {
-                await warmSavePreparation()
-            }
+            await warmSavePreparation()
         } catch {
+            guard !Task.isCancelled else { return }
             phase = .failed(error.localizedDescription)
         }
     }
@@ -1723,6 +1743,7 @@ private struct SubscriptionPriceParityView: View {
             try await prepareSaveIfNeeded()
             savePreparationProgress = 1
         } catch {
+            guard !Task.isCancelled else { return }
             savePreparationErrorMessage = error.localizedDescription
         }
     }
@@ -2788,7 +2809,7 @@ private func ascDate(_ value: String) -> Date? {
     return formatter.date(from: value)
 }
 
-private struct SubscriptionPriceParityPoint: Identifiable, Hashable {
+private struct SubscriptionPriceParityPoint: Identifiable, Hashable, Codable {
     let id: String
     let territoryID: String
     let currencyCode: String?
@@ -2799,7 +2820,7 @@ private struct SubscriptionPriceParityPoint: Identifiable, Hashable {
     let isPreserved: Bool
 }
 
-fileprivate struct SubscriptionPriceParityLoadResult {
+fileprivate struct SubscriptionPriceParityLoadResult: Codable {
     let points: [SubscriptionPriceParityPoint]
     let futureScheduledPriceIDsByTerritory: [String: String]
     let baseTerritoryID: String?
@@ -3199,6 +3220,10 @@ enum AppStoreConnectClient {
         keyID: String,
         privateKeyData: Data
     ) async throws -> SubscriptionPriceParityLoadResult {
+        let cacheKey = "\(issuerID):\(keyID):subscription:\(subscriptionID)"
+        if let cached = PriceSnapshotCache.shared.load(SubscriptionPriceParityLoadResult.self, key: cacheKey) {
+            return cached
+        }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         var territories: [String: String] = [:]
         var pricePoints: [String: ASCSubscriptionPricePointItem] = [:]
@@ -3242,11 +3267,13 @@ enum AppStoreConnectClient {
             }
             .sorted { comparePricePoints($0, $1) }
 
-        return SubscriptionPriceParityLoadResult(
+        let result = SubscriptionPriceParityLoadResult(
             points: points,
             futureScheduledPriceIDsByTerritory: futureScheduledPriceIDsByTerritory,
             baseTerritoryID: nil
         )
+        PriceSnapshotCache.shared.store(result, key: cacheKey)
+        return result
     }
 
     fileprivate static func fetchInAppPurchasePriceParity(
@@ -3255,6 +3282,10 @@ enum AppStoreConnectClient {
         keyID: String,
         privateKeyData: Data
     ) async throws -> SubscriptionPriceParityLoadResult {
+        let cacheKey = "\(issuerID):\(keyID):inAppPurchase:\(inAppPurchaseID)"
+        if let cached = PriceSnapshotCache.shared.load(SubscriptionPriceParityLoadResult.self, key: cacheKey) {
+            return cached
+        }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         let schedule = try await fetchInAppPurchasePriceSchedule(
             inAppPurchaseID: inAppPurchaseID,
@@ -3312,11 +3343,13 @@ enum AppStoreConnectClient {
             }
             .sorted { comparePricePoints($0, $1) }
 
-        return SubscriptionPriceParityLoadResult(
+        let result = SubscriptionPriceParityLoadResult(
             points: points,
             futureScheduledPriceIDsByTerritory: [:],
             baseTerritoryID: schedule.baseTerritoryID
         )
+        PriceSnapshotCache.shared.store(result, key: cacheKey)
+        return result
     }
 
     fileprivate static func saveSubscriptionPrices(
@@ -3330,6 +3363,9 @@ enum AppStoreConnectClient {
         preparation: SubscriptionPriceSavePreparation? = nil,
         progress: (@MainActor @Sendable (SubscriptionPriceSaveProgress) -> Void)? = nil
     ) async throws -> SubscriptionPriceSaveResult {
+        let cacheKey = "\(issuerID):\(keyID):subscription:\(subscriptionID)"
+        PriceSnapshotCache.shared.remove(key: cacheKey)
+        defer { PriceSnapshotCache.shared.remove(key: cacheKey) }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         let subscriptionPricesURL = URL(string: "https://api.appstoreconnect.apple.com/v1/subscriptionPrices")!
         let scheduledStartDate = subscriptionPriceStartDateString(from: startDate)
@@ -3412,65 +3448,54 @@ enum AppStoreConnectClient {
         await MainActor.run {
             progress?(.init(stage: .saving, completedCount: 0, totalCount: totalPendingRequestCount))
         }
-        let batchSize = 3
-        let batchCooldownNanoseconds: UInt64 = 750_000_000
-        for batchStart in stride(from: 0, to: pendingRequests.count, by: batchSize) {
-            let batch = Array(pendingRequests[batchStart..<min(batchStart + batchSize, pendingRequests.count)])
-
-            try await withThrowingTaskGroup(of: SubscriptionPriceSaveAttemptResult.self) { group in
-                for pendingRequest in batch {
-                    group.addTask {
-                        do {
-                            _ = try await send(
-                                url: subscriptionPricesURL,
-                                method: "POST",
-                                bearerToken: token,
-                                body: pendingRequest.requestBody
-                            )
-                            return .saved
-                        } catch {
-                            if isExistingFuturePriceConflict(error),
-                               let existingFuturePriceID = pendingRequest.futureScheduledPriceID {
-                                try await deleteSubscriptionPrice(
-                                    id: existingFuturePriceID,
-                                    bearerToken: token
-                                )
-                                _ = try await send(
-                                    url: subscriptionPricesURL,
-                                    method: "POST",
-                                    bearerToken: token,
-                                    body: pendingRequest.requestBody
-                                )
-                                return .saved
-                            }
-
-                            if isExistingFuturePriceConflict(error) {
-                                return .existingFuturePrice(territoryID: pendingRequest.territoryID)
-                            }
-                            throw error
-                        }
+        try await PricePointLoader.load(
+            territoryIDs: pendingRequests,
+            maxConcurrentRequests: 6,
+            fetch: { pendingRequest -> SubscriptionPriceSaveAttemptResult in
+                do {
+                    _ = try await send(
+                        url: subscriptionPricesURL,
+                        method: "POST",
+                        bearerToken: token,
+                        body: pendingRequest.requestBody
+                    )
+                    return .saved
+                } catch {
+                    if isExistingFuturePriceConflict(error),
+                       let existingFuturePriceID = pendingRequest.futureScheduledPriceID {
+                        try await deleteSubscriptionPrice(
+                            id: existingFuturePriceID,
+                            bearerToken: token
+                        )
+                        _ = try await send(
+                            url: subscriptionPricesURL,
+                            method: "POST",
+                            bearerToken: token,
+                            body: pendingRequest.requestBody
+                        )
+                        return .saved
                     }
+
+                    if isExistingFuturePriceConflict(error) {
+                        return .existingFuturePrice(territoryID: pendingRequest.territoryID)
+                    }
+                    throw error
                 }
-
-                for try await result in group {
-                    switch result {
-                    case .saved:
-                        savedCount += 1
-                    case .existingFuturePrice(let territoryID):
-                        existingFuturePriceTerritoryIDs.append(territoryID)
-                    }
-
-                    let completedCount = savedCount + existingFuturePriceTerritoryIDs.count
-                    await MainActor.run {
-                        progress?(.init(stage: .saving, completedCount: completedCount, totalCount: totalPendingRequestCount))
-                    }
+            },
+            didLoad: { result in
+                switch result {
+                case .saved:
+                    savedCount += 1
+                case .existingFuturePrice(let territoryID):
+                    existingFuturePriceTerritoryIDs.append(territoryID)
                 }
+                progress?(.init(
+                    stage: .saving,
+                    completedCount: savedCount + existingFuturePriceTerritoryIDs.count,
+                    totalCount: totalPendingRequestCount
+                ))
             }
-
-            if batchStart + batchSize < pendingRequests.count {
-                try await Task.sleep(nanoseconds: batchCooldownNanoseconds)
-            }
-        }
+        )
 
         return SubscriptionPriceSaveResult(
             savedCount: savedCount,
@@ -3491,6 +3516,9 @@ enum AppStoreConnectClient {
         preparation: SubscriptionPriceSavePreparation? = nil,
         progress: (@MainActor @Sendable (SubscriptionPriceSaveProgress) -> Void)? = nil
     ) async throws -> SubscriptionPriceSaveResult {
+        let cacheKey = "\(issuerID):\(keyID):inAppPurchase:\(inAppPurchaseID)"
+        PriceSnapshotCache.shared.remove(key: cacheKey)
+        defer { PriceSnapshotCache.shared.remove(key: cacheKey) }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         let scheduledStartDate = subscriptionPriceStartDateString(from: startDate)
 
@@ -3613,7 +3641,7 @@ enum AppStoreConnectClient {
     fileprivate static func prepareSubscriptionPriceSave(
         subscriptionID: String,
         territoryIDs: [String],
-        knownFutureScheduledPriceIDsByTerritory: [String: String] = [:],
+        knownFutureScheduledPriceIDsByTerritory: [String: String]? = nil,
         issuerID: String,
         keyID: String,
         privateKeyData: Data,
@@ -3713,7 +3741,7 @@ enum AppStoreConnectClient {
     private static func prepareSubscriptionPriceSave(
         subscriptionID: String,
         territoryIDs: [String],
-        knownFutureScheduledPriceIDsByTerritory: [String: String] = [:],
+        knownFutureScheduledPriceIDsByTerritory: [String: String]? = nil,
         bearerToken: String,
         progress: (@MainActor @Sendable (_ completedCount: Int, _ totalCount: Int) -> Void)? = nil
     ) async throws -> SubscriptionPriceSavePreparation {
@@ -3722,12 +3750,11 @@ enum AppStoreConnectClient {
         var completedTerritoryCount = 0
         let cachedPricePointsByTerritory = loadCachedSubscriptionPricePoints(
             subscriptionID: subscriptionID,
-            validFor: 24 * 60 * 60
+            validFor: 7 * 24 * 60 * 60
         ) ?? [:]
         var allPricePoints = cachedPricePointsByTerritory
             .filter { uniqueTerritoryIDs.contains($0.key) }
             .flatMap(\.value)
-        let preloadBatchSize = 3
         let territoryIDsNeedingFetch = uniqueTerritoryIDs.filter {
             (cachedPricePointsByTerritory[$0] ?? []).isEmpty
         }
@@ -3746,34 +3773,30 @@ enum AppStoreConnectClient {
             }
         }
 
-        for batchStart in stride(from: 0, to: territoryIDsNeedingFetch.count, by: preloadBatchSize) {
-            let batch = Array(territoryIDsNeedingFetch[batchStart..<min(batchStart + preloadBatchSize, territoryIDsNeedingFetch.count)])
-
-            try await withThrowingTaskGroup(of: [ASCSelectableSubscriptionPricePoint].self) { group in
-                for territoryID in batch {
-                    group.addTask {
-                        try await fetchSubscriptionPricePointOptions(
-                            subscriptionID: subscriptionID,
-                            territoryID: territoryID,
-                            bearerToken: bearerToken
-                        )
-                    }
-                }
-
-                for try await territoryPricePoints in group {
-                    allPricePoints.append(contentsOf: territoryPricePoints)
-                    completedTerritoryCount += 1
-                    let completedCount = completedTerritoryCount
-                    await MainActor.run {
-                        progress?(completedCount, totalTerritoryCount)
-                    }
-                }
+        // Keep completed territories on cancellation/failure so retrying resumes work.
+        defer {
+            if completedTerritoryCount > uniqueTerritoryIDs.count - territoryIDsNeedingFetch.count {
+                storeCachedSubscriptionPricePoints(
+                    subscriptionID: subscriptionID,
+                    pricePoints: allPricePoints
+                )
             }
         }
 
-        storeCachedSubscriptionPricePoints(
-            subscriptionID: subscriptionID,
-            pricePoints: allPricePoints
+        try await PricePointLoader.load(
+            territoryIDs: territoryIDsNeedingFetch,
+            fetch: { territoryID in
+                try await fetchSubscriptionPricePointOptions(
+                    subscriptionID: subscriptionID,
+                    territoryID: territoryID,
+                    bearerToken: bearerToken
+                )
+            },
+            didLoad: { territoryPricePoints in
+                allPricePoints.append(contentsOf: territoryPricePoints)
+                completedTerritoryCount += 1
+                progress?(completedTerritoryCount, totalTerritoryCount)
+            }
         )
 
         return SubscriptionPriceSavePreparation(
@@ -3797,7 +3820,7 @@ enum AppStoreConnectClient {
         var completedTerritoryCount = 0
         let cachedPricePointsByTerritory = loadCachedInAppPurchasePricePoints(
             inAppPurchaseID: inAppPurchaseID,
-            validFor: 24 * 60 * 60
+            validFor: 7 * 24 * 60 * 60
         ) ?? [:]
         var allPricePoints = cachedPricePointsByTerritory
             .filter { uniqueTerritoryIDs.contains($0.key) }
@@ -3820,23 +3843,30 @@ enum AppStoreConnectClient {
             }
         }
 
-        for territoryID in territoryIDsNeedingFetch {
-            let territoryPricePoints = try await fetchInAppPurchasePricePointOptions(
-                inAppPurchaseID: inAppPurchaseID,
-                territoryID: territoryID,
-                bearerToken: bearerToken
-            )
-            allPricePoints.append(contentsOf: territoryPricePoints)
-            completedTerritoryCount += 1
-            let completedCount = completedTerritoryCount
-            await MainActor.run {
-                progress?(completedCount, totalTerritoryCount)
+        // Keep completed territories on cancellation/failure so retrying resumes work.
+        defer {
+            if completedTerritoryCount > uniqueTerritoryIDs.count - territoryIDsNeedingFetch.count {
+                storeCachedInAppPurchasePricePoints(
+                    inAppPurchaseID: inAppPurchaseID,
+                    pricePoints: allPricePoints
+                )
             }
         }
 
-        storeCachedInAppPurchasePricePoints(
-            inAppPurchaseID: inAppPurchaseID,
-            pricePoints: allPricePoints
+        try await PricePointLoader.load(
+            territoryIDs: territoryIDsNeedingFetch,
+            fetch: { territoryID in
+                try await fetchInAppPurchasePricePointOptions(
+                    inAppPurchaseID: inAppPurchaseID,
+                    territoryID: territoryID,
+                    bearerToken: bearerToken
+                )
+            },
+            didLoad: { territoryPricePoints in
+                allPricePoints.append(contentsOf: territoryPricePoints)
+                completedTerritoryCount += 1
+                progress?(completedTerritoryCount, totalTerritoryCount)
+            }
         )
 
         return SubscriptionPriceSavePreparation(
@@ -3859,10 +3889,10 @@ enum AppStoreConnectClient {
 
     private static func resolvedFutureScheduledPriceIDsByTerritory(
         subscriptionID: String,
-        knownFutureScheduledPriceIDsByTerritory: [String: String],
+        knownFutureScheduledPriceIDsByTerritory: [String: String]?,
         bearerToken: String
     ) async throws -> [String: String] {
-        if !knownFutureScheduledPriceIDsByTerritory.isEmpty {
+        if let knownFutureScheduledPriceIDsByTerritory {
             return knownFutureScheduledPriceIDsByTerritory
         }
 
@@ -3998,7 +4028,19 @@ enum AppStoreConnectClient {
         return cacheDirectory.appendingPathComponent("\(inAppPurchaseID).json")
     }
 
+    static func clearPriceCache(product: AppMonetizationProduct, issuerID: String, keyID: String) throws {
+        let kind = product.kind == .subscription ? "subscription" : "inAppPurchase"
+        PriceSnapshotCache.shared.remove(key: "\(issuerID):\(keyID):\(kind):\(product.id)")
+        let url = product.kind == .subscription
+            ? subscriptionPricePointCacheURL(subscriptionID: product.id)
+            : inAppPurchasePricePointCacheURL(inAppPurchaseID: product.id)
+        if let url, FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
     static func clearSubscriptionPricePointCache() throws {
+        try PriceSnapshotCache.shared.clear()
         guard let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return
         }
@@ -4045,6 +4087,12 @@ enum AppStoreConnectClient {
         keyID: String,
         privateKeyData: Data
     ) async throws -> [ASCSelectableSubscriptionPricePoint] {
+        if let territoryID,
+           let cached = loadCachedSubscriptionPricePoints(
+               subscriptionID: subscriptionID, validFor: 7 * 24 * 60 * 60
+           )?[territoryID], !cached.isEmpty {
+            return cached
+        }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         return try await fetchSubscriptionPricePointOptions(
             subscriptionID: subscriptionID,
@@ -4060,6 +4108,12 @@ enum AppStoreConnectClient {
         keyID: String,
         privateKeyData: Data
     ) async throws -> [ASCSelectableSubscriptionPricePoint] {
+        if let territoryID,
+           let cached = loadCachedInAppPurchasePricePoints(
+               inAppPurchaseID: inAppPurchaseID, validFor: 7 * 24 * 60 * 60
+           )?[territoryID], !cached.isEmpty {
+            return cached
+        }
         let token = try makeJWT(issuerID: issuerID, keyID: keyID, privateKeyData: privateKeyData)
         return try await fetchInAppPurchasePricePointOptions(
             inAppPurchaseID: inAppPurchaseID,
@@ -4404,8 +4458,14 @@ enum AppStoreConnectClient {
                 request.httpBody = encodedBody
             }
 
+            var retryAfterSeconds: TimeInterval?
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode == 429,
+                   let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After") {
+                    retryAfterSeconds = TimeInterval(retryAfter)
+                }
                 _ = try validateHTTPResponse(response, data: data)
                 return data
             } catch {
@@ -4416,7 +4476,7 @@ enum AppStoreConnectClient {
 
                 let delaySeconds = min(pow(2.0, Double(attempt - 1)), 8.0)
                 let jitterMultiplier = Double.random(in: 0.85...1.25)
-                let delayNanoseconds = UInt64(delaySeconds * jitterMultiplier * 1_000_000_000)
+                let delayNanoseconds = UInt64(max(delaySeconds * jitterMultiplier, retryAfterSeconds ?? 0) * 1_000_000_000)
                 try await Task.sleep(nanoseconds: delayNanoseconds)
             }
         }
@@ -4456,14 +4516,8 @@ enum AppStoreConnectClient {
     }
 
     private static func isRateLimitExceeded(_ error: Error) -> Bool {
-        guard case let ClientError.httpStatus(code, body) = error,
-              code == 429 else {
-            return false
-        }
-
-        guard let body else { return true }
-        return body.localizedCaseInsensitiveContains("RATE_LIMIT_EXCEEDED")
-            || body.localizedCaseInsensitiveContains("request rate limit")
+        guard case let ClientError.httpStatus(code, _) = error else { return false }
+        return code == 429
     }
 
     private static func isRetryableNetworkError(_ error: Error) -> Bool {

@@ -6,20 +6,26 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		EC5764A42FEA2D0600B1DE18 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = EC5764A32FEA2D0600B1DE18 /* RevenueCat */; };
-		EC5764A62FEA2D0600B1DE18 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = EC5764A52FEA2D0600B1DE18 /* RevenueCatUI */; };
-		EC84AEF22FEBA89C00F51A20 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = EC84AEF12FEBA89C00F51A20 /* Localizable.xcstrings */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		EC4205452FE720ED00F557B0 /* PriceParity.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PriceParity.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EC84AEF12FEBA89C00F51A20 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EC25ADC93062D03500636CE8 /* Exceptions for "PriceParity" folder in "PriceParity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EC4205442FE720ED00F557B0 /* PriceParity */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EC4205472FE720ED00F557B0 /* PriceParity */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EC25ADC93062D03500636CE8 /* Exceptions for "PriceParity" folder in "PriceParity" target */,
+			);
 			path = PriceParity;
 			sourceTree = "<group>";
 		};
@@ -30,8 +36,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EC5764A62FEA2D0600B1DE18 /* RevenueCatUI in Frameworks */,
-				EC5764A42FEA2D0600B1DE18 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -41,7 +45,6 @@
 		EC42053C2FE720ED00F557B0 = {
 			isa = PBXGroup;
 			children = (
-				EC84AEF12FEBA89C00F51A20 /* Localizable.xcstrings */,
 				EC4205472FE720ED00F557B0 /* PriceParity */,
 				EC4205462FE720ED00F557B0 /* Products */,
 			);
@@ -75,8 +78,6 @@
 			);
 			name = PriceParity;
 			packageProductDependencies = (
-				EC5764A32FEA2D0600B1DE18 /* RevenueCat */,
-				EC5764A52FEA2D0600B1DE18 /* RevenueCatUI */,
 			);
 			productName = PriceParity;
 			productReference = EC4205452FE720ED00F557B0 /* PriceParity.app */;
@@ -90,7 +91,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2650;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					EC4205442FE720ED00F557B0 = {
 						CreatedOnToolsVersion = 26.5;
@@ -107,7 +108,6 @@
 			mainGroup = EC42053C2FE720ED00F557B0;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				EC5764A22FEA2D0600B1DE18 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EC4205462FE720ED00F557B0 /* Products */;
@@ -124,7 +124,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EC84AEF22FEBA89C00F51A20 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -201,6 +200,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-expression-type-checking=100";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -260,6 +260,7 @@
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "-Xfrontend -warn-long-expression-type-checking=100";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				VALIDATE_PRODUCT = YES;
@@ -272,11 +273,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 5C778DVBP3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PriceParity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Price Parity";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -288,14 +291,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 3.0;
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.Maicol.PriceParity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -312,11 +315,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 5C778DVBP3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PriceParity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Price Parity";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -328,14 +333,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 3.0;
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.Maicol.PriceParity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -368,30 +373,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		EC5764A22FEA2D0600B1DE18 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.79.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		EC5764A32FEA2D0600B1DE18 /* RevenueCat */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EC5764A22FEA2D0600B1DE18 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCat;
-		};
-		EC5764A52FEA2D0600B1DE18 /* RevenueCatUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EC5764A22FEA2D0600B1DE18 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCatUI;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EC42053D2FE720ED00F557B0 /* Project object */;
 }
