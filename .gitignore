@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode user state and build products
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xcbkptlist
+
+# Swift Package Manager workspace state
+.swiftpm/
+
+# App Store Connect API private keys
+*.p8
+
+# Local test artifacts
+*.profraw
